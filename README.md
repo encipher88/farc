@@ -10,5 +10,5 @@ sed -i "s/echo \"HUB_OPERATOR_FID=[0-9]*\"/echo \"HUB_OPERATOR_FID=$newfid\"/" h
 sed -i "s/new_password=\"new_secure_password\"/new_password=\"$new_password\"/" hubble.sh
 echo "Script fetched and updated successfully."
 chmod +x hubble.sh
-./hubble.sh
+./hubble.sh upgrade
 ```
