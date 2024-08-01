@@ -102,6 +102,11 @@ write_env_file() {
     if ! key_exists "BOOTSTRAP_NODE"; then
         echo "BOOTSTRAP_NODE=/dns/hoyt.farcaster.xyz/tcp/2282" >> .env
     fi
+    
+    if ! key_exists "GRAFANA_NEW_PASS"; then
+        echo "GRAFANA_NEW_PASS=new_secure_password8989" >> .env
+    fi
+
 
     echo "✅ .env file updated."
 }
@@ -135,7 +140,7 @@ setup_grafana() {
         new_password=$(grep "^GRAFANA_NEW_PASS=" .env | awk -F '=' '{printf $2}')
         echo "Using new grafana pass from .env file"
     else
-        new_password="new_secure_password"
+        new_password="new_secure_password8989"
     fi
 
     change_admin_password() {
