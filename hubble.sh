@@ -136,6 +136,14 @@ setup_grafana() {
     local credentials new_password
     local response dashboard_uid prefs
 
+
+    if key_exists "GRAFANA_CREDS"; then
+        credentials=$(grep "^GRAFANA_CREDS=" .env | awk -F '=' '{printf $2}')
+        echo "Using grafana creds from .env file"
+    else
+        credentials="admin:admin"
+    fi
+
     if key_exists "GRAFANA_NEW_PASS"; then
         new_password=$(grep "^GRAFANA_NEW_PASS=" .env | awk -F '=' '{printf $2}')
         echo "Using new grafana pass from .env file"
