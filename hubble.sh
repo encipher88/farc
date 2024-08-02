@@ -24,17 +24,35 @@ install_jq() {
 
     echo "Installing jq..."
 
+    # macOS
+    if [[ "$(uname)" == "Darwin" ]]; then
+        if command -v brew >/dev/null 2>&1; then
+            brew install jq
+        else
+            echo "Homebrew is not installed. Please install Homebrew first."
+            return 1
+        fi
+
     # Ubuntu/Debian
-    if [[ -f /etc/lsb-release ]] || [[ -f /etc/debian_version ]]; then
+    elif [[ -f /etc/lsb-release ]] || [[ -f /etc/debian_version ]]; then
         sudo apt-get update
-        sudo apt-get upgrade -y
         sudo apt-get install -y jq
-        sudo apt-get install -y docker.io
-        sudo apt-get install docker-compose -y
-        sudo apt-get install curl tar wget clang pkg-config git make libssl-dev libclang-dev libclang-12-dev -y
-        sudo apt-get install build-essential bsdmainutils ncdu gcc git-core chrony liblz4-tool -y
-        sudo apt-get install original-awk uidmap dbus-user-session protobuf-compiler unzip -y
-        sudo apt-get install libudev-dev -y
+
+    # RHEL/CentOS
+    elif [[ -f /etc/redhat-release ]]; then
+        sudo yum install -y jq
+
+    # Fedora
+    elif [[ -f /etc/fedora-release ]]; then
+        sudo dnf install -y jq
+
+    # openSUSE
+    elif [[ -f /etc/os-release ]] && grep -q "ID=openSUSE" /etc/os-release; then
+        sudo zypper install -y jq
+
+    # Arch Linux
+    elif [[ -f /etc/arch-release ]]; then
+        sudo pacman -S jq
 
     else
         echo "Unsupported operating system. Please install jq manually."
@@ -58,7 +76,6 @@ fetch_file_from_repo() {
 }
 
 
-
 # Fetch the docker-compose.yml and grafana-dashboard.json files
 fetch_latest_docker_compose_and_dashboard() {
     fetch_file_from_repo "$DOCKER_COMPOSE_FILE_PATH" "docker-compose.yml"
@@ -66,6 +83,54 @@ fetch_latest_docker_compose_and_dashboard() {
     mkdir -p grafana
     chmod 777 grafana
     fetch_file_from_repo "$GRAFANA_INI_PATH" "grafana/grafana.ini"
+}
+
+
+
+validate_and_store() {
+    local rpc_name=$1
+    local expected_chain_id=$2
+
+    while true; do
+        read -p "> Enter your $rpc_name RPC URL: " RPC_URL
+        RESPONSE=$(curl -s -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$RPC_URL")
+
+        # Convert both the response and expected chain ID to lowercase for comparison
+        local lower_response=$(echo "$RESPONSE" | tr '[:upper:]' '[:lower:]')
+        local lower_expected_chain_id=$(echo "$expected_chain_id" | tr '[:upper:]' '[:lower:]')
+
+
+        if [[ $lower_response == *'"result":"'$lower_expected_chain_id'"'* ]]; then
+            echo "$3=$RPC_URL" >> .env
+            break
+        else
+            echo "!!! Invalid !!!"
+            echo "$rpc_name Ethereum RPC URL or chainID is not $expected_chain_id. Please retry."
+            echo "You can signup for a free account at Alchemy or Infura if you need an RPC provider"
+            echo "Server returned \"$RESPONSE\""
+        fi
+    done
+}
+
+store_operator_fid_env() {
+    local input
+    local response
+
+    read -p "> Your FID or farcaster username: " input
+    if [[ -z $input ]]; then
+        response=""
+    elif [[ $input =~ ^-?[0-9]+$ ]]; then
+        response=$(curl -s "https://fnames.farcaster.xyz/transfers?fid=$input" | jq '.transfers[-1].to')
+    else
+        response=$(curl -s "https://fnames.farcaster.xyz/transfers?name=$input" | jq '.transfers[-1].to')
+    fi
+
+    if [ "$response" != "null" ] && [ "$response" != "" ]; then
+        echo "HUB_OPERATOR_FID=$response" >> .env
+    else
+        echo "Not a valid FID or username. Not updating HUB_OPERATOR_FID."
+        echo "HUB_OPERATOR_FID=0" >> .env
+    fi
 }
 
 key_exists() {
@@ -103,14 +168,10 @@ write_env_file() {
         echo "BOOTSTRAP_NODE=/dns/hoyt.farcaster.xyz/tcp/2282" >> .env
     fi
     
-    if ! key_exists "GRAFANA_NEW_PASS"; then
-        echo "GRAFANA_NEW_PASS=new_secure_password8989" >> .env
-    fi
-
+    
 
     echo "✅ .env file updated."
 }
-
 
 ensure_grafana() {
       # Create a grafana data directory if it doesn't exist
@@ -132,10 +193,8 @@ ensure_grafana() {
 ## Configure Grafana
 setup_grafana() {
     local grafana_url="http://127.0.0.1:3000"
-    local initial_credentials="admin:admin"
-    local credentials new_password
+    local credentials
     local response dashboard_uid prefs
-
 
     if key_exists "GRAFANA_CREDS"; then
         credentials=$(grep "^GRAFANA_CREDS=" .env | awk -F '=' '{printf $2}')
@@ -144,33 +203,11 @@ setup_grafana() {
         credentials="admin:admin"
     fi
 
-    if key_exists "GRAFANA_NEW_PASS"; then
-        new_password=$(grep "^GRAFANA_NEW_PASS=" .env | awk -F '=' '{printf $2}')
-        echo "Using new grafana pass from .env file"
-    else
-        new_password="new_secure_password8989"
-    fi
-
-    change_admin_password() {
-        response=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$grafana_url/api/user/password" \
-            -u "$initial_credentials" \
-            -H "Content-Type: application/json" \
-            --data-binary "{\"oldPassword\":\"admin\", \"newPassword\":\"$new_password\", \"confirmNew\":\"$new_password\"}")
-
-        if [[ "$response" == "200" ]]; then
-            echo "✅ Admin password changed successfully."
-            credentials="admin:$new_password"
-        else
-            echo "Failed to change admin password. HTTP status code: $response"
-            return 1
-        fi
-    }
-
     add_datasource() {
-        response=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$grafana_url/api/datasources" \
-            -u "$credentials" \
-            -H "Content-Type: application/json" \
-            --data-binary '{
+        response=$(curl -s -o /dev/null -w "%{http_code}" -X "POST" "$grafana_url/api/datasources" \
+                -u "$credentials" \
+                -H "Content-Type: application/json" \
+                --data-binary '{
             "name":"Graphite",
             "type":"graphite",
             "url":"http://statsd:80",
@@ -189,22 +226,36 @@ setup_grafana() {
 
     # Step 2: Wait for Grafana to be ready
     echo "Waiting for Grafana to be ready..."
-    while [[ "$(curl -s -o /dev/null -w '%{http_code}' $grafana_url/api/health)" != "200" ]]; do
+    while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' $grafana_url/api/health)" != "200" ]]; do
         sleep 2;
     done
     echo "Grafana is ready."
 
-    # Step 3: Change the admin password
-    change_admin_password || exit 1
-
-    # Step 4: Add Graphite as a data source using Grafana's API
+    # Step 3: Add Graphite as a data source using Grafana's API
     add_datasource
 
-    # Step 5: Import the dashboard. The API takes a slightly different format than the JSON import
+    # Check if the default credentials failed
+    if [[ "$response" == "401" ]]; then
+        echo "Please enter your Grafana credentials."
+        read -p "Username: " username
+        read -sp "Password: " password
+        echo
+        credentials="$username:$password"
+
+        # Retry adding the data source with the new credentials
+        add_datasource
+
+        if [[ "$response" != "200" ]]; then
+            echo "Failed to add data source with provided credentials. Exiting."
+            return 1
+        fi
+    fi
+
+    # Step 4: Import the dashboard. The API takes a slightly different format than the JSON import
     # in the UI, so we need to convert the JSON file first.
     jq '{dashboard: (del(.id) | . + {id: null}), folderId: 0, overwrite: true}' "grafana-dashboard.json" > "grafana-dashboard.api.json"
 
-    response=$(curl -s -X POST "$grafana_url/api/dashboards/db" \
+    response=$(curl -s -X "POST" "$grafana_url/api/dashboards/db" \
         -u "$credentials" \
         -H "Content-Type: application/json" \
         --data-binary @grafana-dashboard.api.json)
@@ -216,7 +267,7 @@ setup_grafana() {
         dashboard_uid=$(echo "$response" | jq -r '.uid')
 
         # Set the default home dashboard for the organization
-        prefs=$(curl -s -X PUT "$grafana_url/api/org/preferences" \
+        prefs=$(curl -s -X "PUT" "$grafana_url/api/org/preferences" \
             -u "$credentials" \
             -H "Content-Type: application/json" \
             --data "{\"homeDashboardUID\":\"$dashboard_uid\"}")
@@ -227,17 +278,6 @@ setup_grafana() {
         echo "$response"
         return 1
     fi
-}
-
-# Function to check if a key exists in the .env file
-key_exists() {
-    grep -q "^$1=" .env
-}
-
-# Ensure Grafana is running (replace with your actual implementation)
-ensure_grafana() {
-    echo "Ensuring Grafana and StatsD are running..."
-    # Add your commands to start/restart Grafana and StatsD here
 }
 
 install_docker() {
@@ -281,7 +321,6 @@ setup_identity() {
         echo "✅ Peer Identity exists"
     fi
 }
-
 
 setup_crontab() {
     # Check if crontab is installed
@@ -350,16 +389,13 @@ setup_crontab() {
     local day_of_week=$(( ( 0x${sha:0:8} % 5 ) + 1 ))
     # Pick a random hour between midnight and 6am
     local hour=$((RANDOM % 7))
-    local crontab_entry="0 $hour * * $day_of_week $(pwd)/hubble.sh upgrade >> $(pwd)/hubble-autoupgrade.log 2>&1"
+    local crontab_entry="0 $hour * * $day_of_week $(pwd)/hubble.sh autoupgrade >> $(pwd)/hubble-autoupgrade.log 2>&1"
     if ($CRONTAB_CMD -l 2>/dev/null; echo "${crontab_entry}") | $CRONTAB_CMD -; then
         echo "✅ added auto-upgrade to crontab (0 $hour * * $day_of_week)"
     else
         echo "❌ failed to add auto-upgrade to crontab"
     fi
 }
-
-
-
 
 start_hubble() {
 
@@ -370,11 +406,7 @@ start_hubble() {
     $COMPOSE_CMD up -d hubble
 }
 
-cleanup() {
-  # Prune unused docker cruft. Make sure to call this only when hub is already running
-  echo "Pruning unused docker images and volumes"
-  docker system prune --volumes -f
-}
+
 
 set_compose_command() {
     # Detect whether "docker-compose" or "docker compose" is available
@@ -431,6 +463,7 @@ reexec_as_root_if_needed() {
 reexec_as_root_if_needed "$@"
 
 
+
 # Check for the "up" command-line argument
 if [ "$1" == "up" ]; then
    # Setup the docker-compose command
@@ -472,29 +505,32 @@ if [ "$1" == "upgrade" ]; then
 
     set_platform_commands
 
+
     # Call the function to install docker
     install_docker "$@"
 
     # Call the function to set the COMPOSE_CMD variable
     set_compose_command
-    
+
     # Update the env file if needed
     write_env_file
 
     # Fetch the latest docker-compose.yml
     fetch_latest_docker_compose_and_dashboard
-   
+
     # Setup the Grafana dashboard
     setup_grafana
-   
+
     setup_identity
-    
+
     setup_crontab
 
     # Start the hubble service
     start_hubble
 
     echo "✅ Upgrade complete."
+    echo ""
+    echo "Monitor your node at http://localhost:3000/"
 
     # Sleep for 5 seconds
     sleep 5
@@ -512,6 +548,32 @@ if [ "$1" == "logs" ]; then
     exit 0
 fi
 
+if [ "$1" == "autoupgrade" ]; then
+    # Autoupgrade cronjob needs the correct $PATH entries
+    if [[ ! -f "~/.bashrc" ]]; then
+      source ~/.bashrc
+    fi
+
+    echo "$(date) Attempting hubble autoupgrade..."
+
+    # Since cronjob is running under root, make sure the dependencies are installed
+    install_jq
+    install_docker "$@"
+
+    set_platform_commands
+    set_compose_command
+
+    # Upgrade this script itself, fetch the latest docker-compose.yml, and restart the containers
+    fetch_latest_docker_compose_and_dashboard
+    ensure_grafana
+    start_hubble
+    sleep 5
+
+
+    echo "$(date) Completed hubble autoupgrade"
+
+    exit 0
+fi
 
 # If run without args OR with "help", show a help
 if [ $# -eq 0 ] || [ "$1" == "help" ]; then
