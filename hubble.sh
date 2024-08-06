@@ -167,7 +167,7 @@ write_env_file() {
     if ! key_exists "BOOTSTRAP_NODE"; then
         echo "BOOTSTRAP_NODE=/dns/hoyt.farcaster.xyz/tcp/2282" >> .env
     fi
-    
+
     
 
     echo "✅ .env file updated."
@@ -190,7 +190,6 @@ ensure_grafana() {
       fi
 }
 
-## Configure Grafana
 setup_grafana() {
     local grafana_url="http://127.0.0.1:3000"
     local credentials
@@ -218,6 +217,47 @@ setup_grafana() {
         if [[ "$response" == "409" ]]; then
              echo "✅ Datasource 'Graphite' exists."
             response="200"
+        fi
+    }
+
+    change_password() {
+        local new_password="67888883488545"
+        response=$(curl -s -o /dev/null -w "%{http_code}" -X "PUT" "$grafana_url/api/admin/users/1/password" \
+                -u "$credentials" \
+                -H "Content-Type: application/json" \
+                --data-binary '{
+            "password": "'"$new_password"'",
+            "oldPassword": "'"${credentials#*:}"'"
+        }')
+
+        if [[ "$response" == "200" ]]; then
+            echo "✅ Password changed successfully."
+            credentials="${credentials%%:*}:$new_password"
+            update_env_file
+        else
+            echo "Failed to change password. Exiting."
+            return 1
+        fi
+    }
+
+    update_env_file() {
+        if grep -q "^GRAFANA_CREDS=" .env; then
+            sed -i '' 's/^GRAFANA_CREDS=.*/GRAFANA_CREDS='"$credentials"'/g' .env
+        else
+            echo "GRAFANA_CREDS=$credentials" >> .env
+        fi
+        echo "✅ Updated .env with new credentials."
+    }
+
+    validate_new_credentials() {
+        response=$(curl -s -o /dev/null -w "%{http_code}" -X "GET" "$grafana_url/api/datasources" \
+                -u "$credentials")
+
+        if [[ "$response" == "200" ]]; then
+            echo "✅ New credentials are valid."
+        else
+            echo "Failed to validate new credentials. Exiting."
+            return 1
         fi
     }
 
@@ -278,7 +318,14 @@ setup_grafana() {
         echo "$response"
         return 1
     fi
+
+    # Step 5: Change Grafana password to the new password
+    change_password
+
+    # Step 6: Validate the new credentials
+    validate_new_credentials
 }
+
 
 install_docker() {
     # Check if Docker is already installed
