@@ -618,6 +618,7 @@ if [ "$1" == "autoupgrade" ]; then
     # Upgrade this script itself, fetch the latest docker-compose.yml, and restart the containers
     fetch_latest_docker_compose_and_dashboard
     ensure_grafana
+    setup_identity
     start_hubble
     sleep 5
     cleanup
