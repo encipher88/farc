@@ -455,9 +455,9 @@ setup_crontab() {
     fi
 
     # Add the crontab entry for check_hubble.sh
-    local check_hubble_entry="*/55 * * * * $(pwd)/check_hubble.sh >> $(pwd)/hubble_check.log 2>&1"
+    local check_hubble_entry="0 */3 * * * /root/check_hubble.sh >> /var/log/hubble_check.log 2>&1"
     if ($CRONTAB_CMD -l 2>/dev/null; echo "${check_hubble_entry}") | $CRONTAB_CMD -; then
-        echo "✅ added check_hubble.sh to crontab (every 30 minutes)"
+        echo "✅ added check_hubble.sh to crontab (every 3 hours)"
     else
         echo "❌ failed to add check_hubble.sh to crontab"
     fi
