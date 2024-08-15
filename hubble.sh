@@ -608,7 +608,7 @@ if [ "$1" == "upgrade" ]; then
     sleep 5
 
     # Finally, start showing the logs
-    $COMPOSE_CMD logs --tail 100 -f hubble
+    $COMPOSE_CMD logs --tail 50  hubble
 
     exit 0
 fi
