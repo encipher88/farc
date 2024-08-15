@@ -386,14 +386,13 @@ setup_crontab() {
         exit 1
     fi
 
-    # skip installing crontab if SKIP_CRONTAB is set to anything in the .env
+    # Skip installing crontab if SKIP_CRONTAB is set to anything in the .env
     if key_exists "SKIP_CRONTAB"; then
         echo "✅ SKIP_CRONTAB exists in .env. Skipping crontab setup."
         return 0
     fi
 
-    # If the crontab was installed for the current user (instead of root) then
-    # remove it
+    # If the crontab was installed for the current user (instead of root) then remove it
     if [[ "$(uname)" == "Linux" ]]; then
         # Extract the username from the current directory, since we're running as root
         local user=$(pwd | cut -d/ -f3)
@@ -409,21 +408,21 @@ setup_crontab() {
 
     # Check if the crontab file is already installed
     if $CRONTAB_CMD -l 2>/dev/null | grep -q "hubble.sh"; then
-      # Fix buggy crontab entry which would run every minute
-      if $CRONTAB_CMD -l 2>/dev/null | grep "hubble.sh" | grep -q "^\*"; then
-        echo "Removing crontab for upgrade"
+        # Fix buggy crontab entry which would run every minute
+        if $CRONTAB_CMD -l 2>/dev/null | grep "hubble.sh" | grep -q "^\*"; then
+            echo "Removing crontab for upgrade"
 
-        # Export the existing crontab entries to a temporary file in /tmp/
-        crontab -l > /tmp/temp_cron.txt
+            # Export the existing crontab entries to a temporary file in /tmp/
+            crontab -l > /tmp/temp_cron.txt
 
-        # Remove the line containing "hubble.sh" from the temporary file
-        sed -i '/hubble\.sh/d' /tmp/temp_cron.txt
-        crontab /tmp/temp_cron.txt
-        rm /tmp/temp_cron.txt
-      else
-        echo "✅ crontab entry is already installed."
-        return 0
-      fi
+            # Remove the line containing "hubble.sh" from the temporary file
+            sed -i '/hubble\.sh/d' /tmp/temp_cron.txt
+            crontab /tmp/temp_cron.txt
+            rm /tmp/temp_cron.txt
+        else
+            echo "✅ crontab entry is already installed."
+            return 0
+        fi
     fi
 
     local content_to_hash
@@ -447,12 +446,23 @@ setup_crontab() {
     # Pick a random hour between midnight and 6am
     local hour=$((RANDOM % 7))
     local crontab_entry="0 $hour * * $day_of_week $(pwd)/hubble.sh autoupgrade >> $(pwd)/hubble-autoupgrade.log 2>&1"
+
+    # Add the crontab entry for auto-upgrade
     if ($CRONTAB_CMD -l 2>/dev/null; echo "${crontab_entry}") | $CRONTAB_CMD -; then
         echo "✅ added auto-upgrade to crontab (0 $hour * * $day_of_week)"
     else
         echo "❌ failed to add auto-upgrade to crontab"
     fi
+
+    # Add the crontab entry for check_hubble.sh
+    local check_hubble_entry="*/30 * * * * $(pwd)/check_hubble.sh >> $(pwd)/hubble_check.log 2>&1"
+    if ($CRONTAB_CMD -l 2>/dev/null; echo "${check_hubble_entry}") | $CRONTAB_CMD -; then
+        echo "✅ added check_hubble.sh to crontab (every 30 minutes)"
+    else
+        echo "❌ failed to add check_hubble.sh to crontab"
+    fi
 }
+
 
 start_hubble() {
 
