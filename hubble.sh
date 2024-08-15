@@ -241,12 +241,22 @@ setup_grafana() {
     }
 
     update_env_file() {
-        if grep -q "^GRAFANA_CREDS=" .env; then
-            sed -i '' 's/^GRAFANA_CREDS=.*/GRAFANA_CREDS='"$credentials"'/g' .env
+        # Ensure the .env file exists before attempting to modify it
+        if [[ -f ".env" ]]; then
+            # Use a different syntax based on the OS
+            if grep -q "^GRAFANA_CREDS=" .env; then
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' 's/^GRAFANA_CREDS=.*/GRAFANA_CREDS='"$credentials"'/g' .env
+                else
+                    sed -i 's/^GRAFANA_CREDS=.*/GRAFANA_CREDS='"$credentials"'/g' .env
+                fi
+            else
+                echo "GRAFANA_CREDS=$credentials" >> .env
+            fi
+            echo "✅ Updated .env with new credentials."
         else
-            echo "GRAFANA_CREDS=$credentials" >> .env
+            echo "⚠️ .env file not found. Skipping the update."
         fi
-        echo "✅ Updated .env with new credentials."
     }
 
     validate_new_credentials() {
