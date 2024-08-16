@@ -4,7 +4,7 @@
 current_numMessages=$(curl -s http://localhost:2281/v1/info?dbstats=1 | jq '.dbStats.numMessages')
 
 # File to store the last numMessages
-last_numMessages_file="/tmp/last_numMessages.txt"
+last_numMessages_file="$HOME/hubble/last_numMessages.txt"
 
 # Check if the file exists
 if [ -f "$last_numMessages_file" ]; then
