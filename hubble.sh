@@ -129,7 +129,6 @@ store_operator_fid_env() {
         echo "HUB_OPERATOR_FID=$response" >> .env
     else
         echo "Not a valid FID or username. Not updating HUB_OPERATOR_FID."
-        echo "HUB_OPERATOR_FID=0" >> .env
     fi
 }
 
@@ -161,7 +160,7 @@ write_env_file() {
     fi
 
     if ! key_exists "HUB_OPERATOR_FID"; then
-        echo "HUB_OPERATOR_FID=778022" >> .env
+        echo "HUB_OPERATOR_FID=000001" >> .env
     fi
     
     if ! key_exists "BOOTSTRAP_NODE"; then
