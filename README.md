@@ -16,7 +16,8 @@ wget https://raw.githubusercontent.com/encipher88/farc/main/hubble.sh -O hubble.
 wget https://raw.githubusercontent.com/encipher88/farc/main/check_hubble.sh -O check_hubble.sh
 
 # Updating the FID in the script
-sed -i "s/echo \"HUB_OPERATOR_FID=[0-9]*\"/echo \"HUB_OPERATOR_FID=$newfid\"/" hubble.sh
+sed -i "s/echo[[:space:]]\"HUB_OPERATOR_FID=[0-9]\+\"[[:space:]]>>[[:space:]].env/echo \"HUB_OPERATOR_FID=$newfid\" >> .env/" hubble.sh
+sed -i "s/HUB_OPERATOR_FID=[0-9]\+/HUB_OPERATOR_FID=$newfid/" "/root/hubble/.env"
 
 # Updating the password in the script
 sed -i "s|local new_password=.*|local new_password=\"$new_password\"|" hubble.sh
